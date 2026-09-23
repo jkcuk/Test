@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Animated Texture Example</title>
+<style>
+body {
+    margin: 0;
+    overflow: hidden;
+}
+
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+}
+
+#controls {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 1;
+    width: min(16rem, calc(100vw - 2rem));
+    padding: 1rem;
+    color: #f4f7fb;
+    background: rgba(15, 23, 42, 0.88);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 0.75rem;
+    box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.25);
+    font: 0.9rem/1.4 system-ui, sans-serif;
+    backdrop-filter: blur(0.5rem);
+}
+
+#controls h1 {
+    margin: 0 0 0.85rem;
+    font-size: 1rem;
+}
+
+.control {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.35rem 0.75rem;
+    align-items: center;
+    margin-top: 0.75rem;
+}
+
+.control output {
+    min-width: 2.5rem;
+    color: #8ee3f5;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.control input {
+    grid-column: 1 / -1;
+    width: 100%;
+    accent-color: #8ee3f5;
+}
+</style>
+</head>
+<body>
+
+<canvas id="glCanvas"></canvas>
+
+<section id="controls" aria-label="Animation controls">
+    <h1>Animation controls</h1>
+    <label class="control" for="radiusControl">
+        <span>Dot radius</span>
+        <output id="radiusValue" for="radiusControl">30</output>
+        <input id="radiusControl" type="range" min="2" max="100" step="1" value="30">
+    </label>
+    <label class="control" for="countControl">
+        <span>Number of dots</span>
+        <output id="countValue" for="countControl">10</output>
+        <input id="countControl" type="range" min="1" max="100" step="1" value="10">
+    </label>
+    <label class="control" for="shiftControl">
+        <span>Shift</span>
+        <output id="shiftValue" for="shiftControl">10</output>
+        <input id="shiftControl" type="range" min="-2" max="2" step="0.1" value="0.2">
+    </label>
+    <label class="control" for="omegaControl">
+        <span>Omega</span>
+        <output id="omegaValue" for="omegaControl">1.0</output>
+        <input id="omegaControl" type="range" min="-20" max="20" step="0.1" value="6.28">
+    </label>
+    <label class="control" for="brightnessOscillationAmplitudeControl">
+        <span>Brightness oscillation amplitude</span>
+        <output id="brightnessOscillationAmplitudeValue" for="brightnessOscillationAmplitudeControl">0.5</output>
+        <input id="brightnessOscillationAmplitudeControl" type="range" min="0" max="0.5" step="0.01" value="0.5">
+    </label>
+</section>
+
+<script>
+
+const canvas =
+    document.getElementById("glCanvas");
+
+canvas.width =
+    window.innerWidth;
+
+canvas.height =
+    window.innerHeight;
+
+const gl =
+    canvas.getContext("webgl2");
+
+
+// ====================================================
+// SHADERS
+// ====================================================
+
+const vertexShaderSource = `#version 300 es
+
+in vec2 position;
+
+out vec2 vUv;
+
+void main()
+{
+    vUv = position * 0.5 + 0.5;
+
+    gl_Position =
+        vec4(position, 0.0, 1.0);
+}
+`;
+
+const fragmentShaderSource = `#version 300 es
+
+precision highp float;
+
+in vec2 vUv;
+
+uniform sampler2D tex1;
+uniform sampler2D tex2;
+uniform sampler2D tex3;
+
+uniform float omegaT;
+uniform float brightnessOscillationAmplitude;
+
+out vec4 fragColor;
+
+void main()
+{
+    vec4 c1 = texture(tex1, vUv);
+    vec4 c2 = texture(tex2, vUv);
+    vec4 c3 = texture(tex3, vUv);
+
+    float twoPi =
+        2.0 * 3.14159265359;
+
+    float m1 = 1.0 - 2.0*brightnessOscillationAmplitude +
+        brightnessOscillationAmplitude * (
+            1.0 +
+            sin(omegaT - 0.2*twoPi)
+        );
+
+    float m2 = 1.0 - 2.0*brightnessOscillationAmplitude +
+        brightnessOscillationAmplitude * (
+            1.0 +
+            sin(omegaT + 0.0)
+        );
+
+    float m3 = 1.0 - 2.0*brightnessOscillationAmplitude +
+        brightnessOscillationAmplitude * (
+            1.0 +
+            sin(omegaT + 0.2*twoPi)
+        );
+
+    vec4 result =
+        vec4(0.0);
+
+    // result.rgb = c1.a * c1.rgb * m1 + (1.0 - c1.a) * (c2.rgb * c2.a * m2 + c3.rgb * c3.a * m3);
+    result.rgb = c2.a * c2.rgb * m2 + (1.0 - c2.a) * (c1.rgb * c1.a * m1 + c3.rgb * c3.a * m3);
+
+    // if(c1.a == 1.0) {
+    //     result.rgb += c1.rgb * m1;
+    // } else {
+    //     // result.rgb += c1.rgb * c1.a * m1;
+    //     result.rgb += c2.rgb * c2.a * m2 + c3.rgb * c3.a * m3;
+    // }
+
+    result.a = 1.0;
+
+    fragColor =
+        clamp(result, 0.0, 1.0);
+}
+`;
+
+
+// ====================================================
+// SHADER COMPILATION
+// ====================================================
+
+function createShader(type, source)
+{
+    const shader =
+        gl.createShader(type);
+
+    gl.shaderSource(
+        shader,
+        source
+    );
+
+    gl.compileShader(
+        shader
+    );
+
+    if(
+        !gl.getShaderParameter(
+            shader,
+            gl.COMPILE_STATUS
+        )
+    ) {
+        throw new Error(
+            gl.getShaderInfoLog(
+                shader
+            )
+        );
+    }
+
+    return shader;
+}
+
+const vs =
+    createShader(
+        gl.VERTEX_SHADER,
+        vertexShaderSource
+    );
+
+const fs =
+    createShader(
+        gl.FRAGMENT_SHADER,
+        fragmentShaderSource
+    );
+
+const program =
+    gl.createProgram();
+
+gl.attachShader(program, vs);
+gl.attachShader(program, fs);
+gl.linkProgram(program);
+
+if(
+    !gl.getProgramParameter(
+        program,
+        gl.LINK_STATUS
+    )
+) {
+    throw new Error(
+        gl.getProgramInfoLog(
+            program
+        )
+    );
+}
+
+
+// ====================================================
+// FULLSCREEN QUAD
+// ====================================================
+
+const vertices =
+    new Float32Array([
+        -1, -1,
+         1, -1,
+        -1,  1,
+
+        -1,  1,
+         1, -1,
+         1,  1
+    ]);
+
+const vao =
+    gl.createVertexArray();
+
+gl.bindVertexArray(vao);
+
+const vbo =
+    gl.createBuffer();
+
+gl.bindBuffer(
+    gl.ARRAY_BUFFER,
+    vbo
+);
+
+gl.bufferData(
+    gl.ARRAY_BUFFER,
+    vertices,
+    gl.STATIC_DRAW
+);
+
+const positionLocation =
+    gl.getAttribLocation(
+        program,
+        "position"
+    );
+
+gl.enableVertexAttribArray(
+    positionLocation
+);
+
+gl.vertexAttribPointer(
+    positionLocation,
+    2,
+    gl.FLOAT,
+    false,
+    0,
+    0
+);
+
+
+// ====================================================
+// OFFSCREEN CANVASES
+// ====================================================
+
+function makeCanvas()
+{
+    const c =
+        document.createElement(
+            "canvas"
+        );
+
+    c.width =
+        canvas.width;
+
+    c.height =
+        canvas.height;
+
+    return c;
+}
+
+const c1 = makeCanvas();
+const c2 = makeCanvas();
+const c3 = makeCanvas();
+
+const ctx1 = c1.getContext("2d");
+
+const ctx2 = c2.getContext("2d");
+
+const ctx3 = c3.getContext("2d");
+
+
+// ====================================================
+// TEXTURES
+// ====================================================
+
+function createTexture()
+{
+    const tex = gl.createTexture();
+
+    gl.bindTexture(
+        gl.TEXTURE_2D,
+        tex
+    );
+
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MIN_FILTER,
+        gl.LINEAR
+    );
+
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_MAG_FILTER,
+        gl.LINEAR
+    );
+
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_WRAP_S,
+        gl.CLAMP_TO_EDGE
+    );
+
+    gl.texParameteri(
+        gl.TEXTURE_2D,
+        gl.TEXTURE_WRAP_T,
+        gl.CLAMP_TO_EDGE
+    );
+
+    return tex;
+}
+
+const tex1 = createTexture();
+
+const tex2 = createTexture();
+
+const tex3 = createTexture();
+
+
+// ====================================================
+// DRAW CIRCLE
+// ====================================================
+
+function drawCircle(
+    ctx,
+    x,
+    y,
+    r,
+    colour
+)
+{
+    ctx.beginPath();
+
+    ctx.arc(
+        x,
+        y,
+        r,
+        0,
+        2 * Math.PI
+    );
+
+    ctx.fillStyle =
+        colour;
+
+    ctx.fill();
+}
+
+// ====================================================
+// ANIMATION
+// ====================================================
+
+let dotRadius = 30.0;
+let dotCount = 10;
+let shift = 1.0;
+let omega = 6.28;
+let previousTimeS = 0.0;
+let omegaT = 0.0;
+let brightnessOscillationAmplitude = 0.5;
+
+const radiusControl =
+    document.getElementById("radiusControl");
+
+const radiusValue =
+    document.getElementById("radiusValue");
+
+const countControl =
+    document.getElementById("countControl");
+
+const countValue =
+    document.getElementById("countValue");
+
+const shiftControl =
+    document.getElementById("shiftControl");
+
+const shiftValue =
+    document.getElementById("shiftValue");
+
+const omegaControl =
+    document.getElementById("omegaControl");
+
+const omegaValue =
+    document.getElementById("omegaValue");
+
+const brightnessOscillationAmplitudeControl =
+    document.getElementById("brightnessOscillationAmplitudeControl");
+
+const brightnessOscillationAmplitudeValue =
+    document.getElementById("brightnessOscillationAmplitudeValue");
+
+radiusControl.addEventListener(
+    "input",
+    () => {
+        dotRadius = Number(radiusControl.value);
+        radiusValue.value = dotRadius;
+        radiusValue.textContent = dotRadius;
+    }
+);
+
+countControl.addEventListener(
+    "input",
+    () => {
+        dotCount = Number(countControl.value);
+        countValue.value = dotCount;
+        countValue.textContent = dotCount;
+    }
+);
+
+shiftControl.addEventListener(
+    "input",
+    () => {
+        shift = Number(shiftControl.value);
+        shiftValue.value = shift;
+        shiftValue.textContent = shift;
+    }
+);
+
+omegaControl.addEventListener(
+    "input",
+    () => {
+        omega = Number(omegaControl.value);
+        omegaValue.value = omega;
+        omegaValue.textContent = omega;
+    }
+);
+
+brightnessOscillationAmplitudeControl.addEventListener(
+    "input",
+    () => {
+        brightnessOscillationAmplitude = Number(brightnessOscillationAmplitudeControl.value);
+        brightnessOscillationAmplitudeValue.value = brightnessOscillationAmplitude;
+        brightnessOscillationAmplitudeValue.textContent = brightnessOscillationAmplitude;
+    }
+);
+
+function updateCanvas(
+    ctx,
+    colour,
+    xOffset
+)
+{
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    const yDotCount = 10;
+    for(let j=0; j<yDotCount; j++) 
+    for(let i = 0; i < dotCount; i++) {
+        const x = (i+1)/(dotCount+1) * canvas.width + xOffset * Math.sin(0.1*i-0.5*dotCount+Math.sin(0.4*j));
+        const y = (j+1)/(yDotCount+1) * canvas.height;
+
+        drawCircle(
+            ctx,
+            x,
+            y,
+            dotRadius,
+            colour
+        );
+    }
+
+    // const x = canvas.width * 0.5 + xOffset;
+
+    // const y = canvas.height * 0.5 + yOffset;
+
+    // drawCircle(
+    //     ctx,
+    //     x,
+    //     y,
+    //     dotRadius,
+    //     colour
+    // );
+}
+
+
+function uploadTexture(
+    tex,
+    sourceCanvas
+)
+{
+    gl.bindTexture(
+        gl.TEXTURE_2D,
+        tex
+    );
+
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        sourceCanvas
+    );
+}
+
+
+// ====================================================
+// RENDER LOOP
+// ====================================================
+
+const omegaTLocation =
+    gl.getUniformLocation(
+        program,
+        "omegaT"
+    );
+
+const brightnessOscillationAmplitudeLocation =
+    gl.getUniformLocation(
+        program,
+        "brightnessOscillationAmplitude"
+    );
+
+function render(timeMs)
+{
+    const timeS = timeMs * 0.001;
+    let deltaTimeS = timeS - previousTimeS;
+    previousTimeS = timeS;
+    omegaT += omega * deltaTimeS;
+
+    updateCanvas(
+        ctx1,
+        "rgba(255,0,0,1)",
+        -shift // , -shift*s
+    );
+
+    updateCanvas(
+        ctx2,
+        "rgba(255,0,0,1)",
+        0.0 // , 0.0
+    );
+
+    updateCanvas(
+        ctx3,
+        "rgba(255,0,0,1)",
+        +shift // *c, +shift*s
+    );
+
+    uploadTexture(
+        tex1,
+        c1
+    );
+
+    uploadTexture(
+        tex2,
+        c2
+    );
+
+    uploadTexture(
+        tex3,
+        c3
+    );
+
+    gl.viewport(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    gl.clearColor(
+        0,
+        0,
+        0,
+        1
+    );
+
+    gl.clear(
+        gl.COLOR_BUFFER_BIT
+    );
+
+    gl.useProgram(
+        program
+    );
+
+    gl.bindVertexArray(
+        vao
+    );
+
+    gl.activeTexture(
+        gl.TEXTURE0
+    );
+
+    gl.bindTexture(
+        gl.TEXTURE_2D,
+        tex1
+    );
+
+    gl.uniform1i(
+        gl.getUniformLocation(
+            program,
+            "tex1"
+        ),
+        0
+    );
+
+    gl.activeTexture(
+        gl.TEXTURE1
+    );
+
+    gl.bindTexture(
+        gl.TEXTURE_2D,
+        tex2
+    );
+
+    gl.uniform1i(
+        gl.getUniformLocation(
+            program,
+            "tex2"
+        ),
+        1
+    );
+
+    gl.activeTexture(
+        gl.TEXTURE2
+    );
+
+    gl.bindTexture(
+        gl.TEXTURE_2D,
+        tex3
+    );
+
+    gl.uniform1i(
+        gl.getUniformLocation(
+            program,
+            "tex3"
+        ),
+        2
+    );
+
+    gl.uniform1f(
+        omegaTLocation,
+        omegaT
+    );
+
+    gl.uniform1f(
+        brightnessOscillationAmplitudeLocation,
+        brightnessOscillationAmplitude
+    );
+
+    gl.drawArrays(
+        gl.TRIANGLES,
+        0,
+        6
+    );
+
+    requestAnimationFrame(
+        render
+    );
+}
+
+requestAnimationFrame(
+    render
+);
+
+</script>
+
+</body>
+</html>
