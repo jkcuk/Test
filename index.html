@@ -4,17 +4,20 @@
 <meta charset="utf-8">
 <title>Animated Texture Example</title>
 <style>
+/* Let the WebGL canvas cover the viewport without scrollbars. */
 body {
     margin: 0;
     overflow: hidden;
 }
 
+/* The canvas is scaled to the viewport; its drawing buffer is sized in JS. */
 canvas {
     display: block;
     width: 100vw;
     height: 100vh;
 }
 
+/* Keep the controls above the canvas in a compact, readable overlay. */
 #controls {
     position: fixed;
     top: 1rem;
@@ -36,6 +39,7 @@ canvas {
     font-size: 1rem;
 }
 
+/* Put each control's label and editable value above its full-width slider. */
 .control {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 5rem;
@@ -67,6 +71,7 @@ canvas {
 
 <canvas id="glCanvas"></canvas>
 
+<!-- Each setting has a numeric field for precise edits and a slider for quick ones. -->
 <section id="controls" aria-label="Animation controls">
     <h1>Animation controls</h1>
     <div class="control">
@@ -98,6 +103,8 @@ canvas {
 
 <script>
 
+// The canvas is drawn at the current viewport size so the pixel-based dot
+// radius and the WebGL viewport use the same coordinate dimensions.
 const canvas =
     document.getElementById("glCanvas");
 
@@ -117,6 +124,7 @@ const gl =
 
 const vertexShaderSource = `#version 300 es
 
+// The two triangles form a full-screen quad; UV coordinates address its textures.
 in vec2 position;
 
 out vec2 vUv;
@@ -147,6 +155,7 @@ out vec4 fragColor;
 
 void main()
 {
+    // Sample the three separately rendered dot layers at this screen position.
     vec4 c1 = texture(tex1, vUv);
     vec4 c2 = texture(tex2, vUv);
     vec4 c3 = texture(tex3, vUv);
@@ -154,6 +163,8 @@ void main()
     float twoPi =
         2.0 * 3.14159265359;
 
+    // Each layer gets a phase-shifted brightness multiplier, creating a cycle
+    // in which the three layers brighten and dim in sequence.
     float m1 = 1.0 - 2.0*brightnessOscillationAmplitude +
         brightnessOscillationAmplitude * (
             1.0 +
@@ -172,6 +183,7 @@ void main()
             sin(omegaT + 0.2*twoPi)
         );
 
+    // Composite layer 2 over the combined contribution of layers 1 and 3.
     vec4 result =
         vec4(0.0);
 
@@ -217,6 +229,8 @@ function createShader(type, source)
             gl.COMPILE_STATUS
         )
     ) {
+        // Fail immediately with the driver's diagnostic instead of rendering
+        // with an unusable shader.
         throw new Error(
             gl.getShaderInfoLog(
                 shader
@@ -252,6 +266,7 @@ if(
         gl.LINK_STATUS
     )
 ) {
+    // Linking can fail even when each shader compiled successfully.
     throw new Error(
         gl.getProgramInfoLog(
             program
@@ -264,6 +279,8 @@ if(
 // FULLSCREEN QUAD
 // ====================================================
 
+// Two triangles cover clip space (-1..1); the fragment shader runs once for
+// every output pixel covered by this quad.
 const vertices =
     new Float32Array([
         -1, -1,
@@ -300,7 +317,8 @@ const positionLocation =
         "position"
     );
 
-gl.enableVertexAttribArray(
+    // Describe each vertex as two tightly packed floating-point coordinates.
+    gl.enableVertexAttribArray(
     positionLocation
 );
 
@@ -318,6 +336,8 @@ gl.vertexAttribPointer(
 // OFFSCREEN CANVASES
 // ====================================================
 
+// Dots are easier to draw with the 2D canvas API; these images become the
+// three input layers sampled by the WebGL fragment shader.
 function makeCanvas()
 {
     const c =
@@ -362,6 +382,7 @@ function createTexture()
         gl.LINEAR
     );
 
+    // Clamp edge samples and interpolate between texels when scaling layers.
     gl.texParameteri(
         gl.TEXTURE_2D,
         gl.TEXTURE_MAG_FILTER,
@@ -394,6 +415,7 @@ const tex3 = createTexture();
 // DRAW CIRCLE
 // ====================================================
 
+// Draw one filled dot into an offscreen layer.
 function drawCircle(
     ctx,
     x,
@@ -430,6 +452,8 @@ let previousTimeS = 0.0;
 let omegaT = 0.0;
 let brightnessOscillationAmplitude = 0.5;
 
+// Keep a slider and its number field in sync while applying valid edits to
+// the corresponding animation setting.
 function bindNumericControl(rangeId, numberId, onChange)
 {
     const range =
@@ -444,6 +468,8 @@ function bindNumericControl(rangeId, numberId, onChange)
     function update(value)
     {
         const numericValue = Number(value);
+        // Number fields can be temporarily empty or out of range while typing;
+        // do not send those intermediate values into the animation.
         if(
             !Number.isFinite(numericValue) ||
             numericValue < min ||
@@ -474,6 +500,7 @@ function bindNumericControl(rangeId, numberId, onChange)
     number.addEventListener(
         "change",
         () => {
+            // Restore the last valid slider value when an edit is left invalid.
             if(!number.validity.valid || number.value === "") {
                 number.value = range.value;
             } else {
@@ -519,6 +546,8 @@ function updateCanvas(
     xOffset
 )
 {
+    // Rebuild this layer each frame so changes to dot count, radius, or shift
+    // are reflected immediately rather than accumulating old drawings.
     ctx.clearRect(
         0,
         0,
@@ -526,6 +555,7 @@ function updateCanvas(
         canvas.height
     );
 
+    // Keep a fixed number of rows while the user-controlled count changes columns.
     const yDotCount = 10;
     for(let j=0; j<yDotCount; j++) 
     for(let i = 0; i < dotCount; i++) {
@@ -560,6 +590,7 @@ function uploadTexture(
     sourceCanvas
 )
 {
+    // Copy the current 2D canvas pixels into the GPU texture used by the shader.
     gl.bindTexture(
         gl.TEXTURE_2D,
         tex
@@ -594,11 +625,13 @@ const brightnessOscillationAmplitudeLocation =
 
 function render(timeMs)
 {
-    const timeS = timeMs * 0.001;
+        // requestAnimationFrame supplies milliseconds; omega is radians per second.
+        const timeS = timeMs * 0.001;
     let deltaTimeS = timeS - previousTimeS;
     previousTimeS = timeS;
     omegaT += omega * deltaTimeS;
 
+    // Render matching dot patterns into three layers, offsetting the outer two.
     updateCanvas(
         ctx1,
         "rgba(255,0,0,1)",
@@ -632,6 +665,7 @@ function render(timeMs)
         c3
     );
 
+    // Match WebGL's rendering region to the canvas drawing buffer.
     gl.viewport(
         0,
         0,
@@ -658,6 +692,7 @@ function render(timeMs)
         vao
     );
 
+    // Bind each layer to its sampler slot for this draw.
     gl.activeTexture(
         gl.TEXTURE0
     );
@@ -714,6 +749,8 @@ function render(timeMs)
         omegaT
     );
 
+    // These uniforms are updated every frame so control edits take effect
+    // without rebuilding the shader program.
     gl.uniform1f(
         brightnessOscillationAmplitudeLocation,
         brightnessOscillationAmplitude
@@ -730,6 +767,7 @@ function render(timeMs)
     );
 }
 
+// Start the animation loop; each call schedules the following frame.
 requestAnimationFrame(
     render
 );
