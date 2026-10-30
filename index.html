@@ -38,20 +38,25 @@ canvas {
 
 .control {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) 5rem;
     gap: 0.35rem 0.75rem;
     align-items: center;
     margin-top: 0.75rem;
 }
 
-.control output {
-    min-width: 2.5rem;
-    color: #8ee3f5;
-    text-align: right;
+.control input[type="number"] {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.2rem 0.35rem;
+    color: #f4f7fb;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 0.25rem;
+    font: inherit;
     font-variant-numeric: tabular-nums;
 }
 
-.control input {
+.control input[type="range"] {
     grid-column: 1 / -1;
     width: 100%;
     accent-color: #8ee3f5;
@@ -64,31 +69,31 @@ canvas {
 
 <section id="controls" aria-label="Animation controls">
     <h1>Animation controls</h1>
-    <label class="control" for="radiusControl">
-        <span>Dot radius</span>
-        <output id="radiusValue" for="radiusControl">30</output>
+    <div class="control">
+        <label for="radiusControl">Dot radius</label>
+        <input id="radiusNumberControl" type="number" min="2" max="100" step="1" value="30" aria-label="Dot radius value">
         <input id="radiusControl" type="range" min="2" max="100" step="1" value="30">
-    </label>
-    <label class="control" for="countControl">
-        <span>Number of dots</span>
-        <output id="countValue" for="countControl">10</output>
+    </div>
+    <div class="control">
+        <label for="countControl">Number of dots</label>
+        <input id="countNumberControl" type="number" min="1" max="100" step="1" value="10" aria-label="Number of dots value">
         <input id="countControl" type="range" min="1" max="100" step="1" value="10">
-    </label>
-    <label class="control" for="shiftControl">
-        <span>Shift</span>
-        <output id="shiftValue" for="shiftControl">10</output>
-        <input id="shiftControl" type="range" min="-2" max="2" step="0.1" value="0.2">
-    </label>
-    <label class="control" for="omegaControl">
-        <span>Omega</span>
-        <output id="omegaValue" for="omegaControl">1.0</output>
-        <input id="omegaControl" type="range" min="-20" max="20" step="0.1" value="6.28">
-    </label>
-    <label class="control" for="brightnessOscillationAmplitudeControl">
-        <span>Brightness oscillation amplitude</span>
-        <output id="brightnessOscillationAmplitudeValue" for="brightnessOscillationAmplitudeControl">0.5</output>
+    </div>
+    <div class="control">
+        <label for="shiftControl">Shift</label>
+        <input id="shiftNumberControl" type="number" min="-2" max="2" step="0.1" value="1" aria-label="Shift value">
+        <input id="shiftControl" type="range" min="-2" max="2" step="0.1" value="1">
+    </div>
+    <div class="control">
+        <label for="omegaControl">Omega</label>
+        <input id="omegaNumberControl" type="number" min="-20" max="20" step="0.01" value="6.28" aria-label="Omega value">
+        <input id="omegaControl" type="range" min="-20" max="20" step="0.01" value="6.28">
+    </div>
+    <div class="control">
+        <label for="brightnessOscillationAmplitudeControl">Brightness oscillation amplitude</label>
+        <input id="brightnessOscillationAmplitudeNumberControl" type="number" min="0" max="0.5" step="0.01" value="0.5" aria-label="Brightness oscillation amplitude value">
         <input id="brightnessOscillationAmplitudeControl" type="range" min="0" max="0.5" step="0.01" value="0.5">
-    </label>
+    </div>
 </section>
 
 <script>
@@ -334,9 +339,7 @@ const c2 = makeCanvas();
 const c3 = makeCanvas();
 
 const ctx1 = c1.getContext("2d");
-
 const ctx2 = c2.getContext("2d");
-
 const ctx3 = c3.getContext("2d");
 
 
@@ -427,79 +430,87 @@ let previousTimeS = 0.0;
 let omegaT = 0.0;
 let brightnessOscillationAmplitude = 0.5;
 
-const radiusControl =
-    document.getElementById("radiusControl");
+function bindNumericControl(rangeId, numberId, onChange)
+{
+    const range =
+        document.getElementById(rangeId);
 
-const radiusValue =
-    document.getElementById("radiusValue");
+    const number =
+        document.getElementById(numberId);
 
-const countControl =
-    document.getElementById("countControl");
+    const min = Number(range.min);
+    const max = Number(range.max);
 
-const countValue =
-    document.getElementById("countValue");
+    function update(value)
+    {
+        const numericValue = Number(value);
+        if(
+            !Number.isFinite(numericValue) ||
+            numericValue < min ||
+            numericValue > max
+        ) {
+            return;
+        }
 
-const shiftControl =
-    document.getElementById("shiftControl");
-
-const shiftValue =
-    document.getElementById("shiftValue");
-
-const omegaControl =
-    document.getElementById("omegaControl");
-
-const omegaValue =
-    document.getElementById("omegaValue");
-
-const brightnessOscillationAmplitudeControl =
-    document.getElementById("brightnessOscillationAmplitudeControl");
-
-const brightnessOscillationAmplitudeValue =
-    document.getElementById("brightnessOscillationAmplitudeValue");
-
-radiusControl.addEventListener(
-    "input",
-    () => {
-        dotRadius = Number(radiusControl.value);
-        radiusValue.value = dotRadius;
-        radiusValue.textContent = dotRadius;
+        range.value = String(numericValue);
+        number.value = range.value;
+        onChange(Number(range.value));
     }
+
+    range.addEventListener(
+        "input",
+        () => update(range.value)
+    );
+
+    number.addEventListener(
+        "input",
+        () => {
+            if(number.value !== "" && number.validity.valid) {
+                update(number.value);
+            }
+        }
+    );
+
+    number.addEventListener(
+        "change",
+        () => {
+            if(!number.validity.valid || number.value === "") {
+                number.value = range.value;
+            } else {
+                update(number.value);
+            }
+        }
+    );
+}
+
+bindNumericControl(
+    "radiusControl",
+    "radiusNumberControl",
+    value => dotRadius = value
 );
 
-countControl.addEventListener(
-    "input",
-    () => {
-        dotCount = Number(countControl.value);
-        countValue.value = dotCount;
-        countValue.textContent = dotCount;
-    }
+bindNumericControl(
+    "countControl",
+    "countNumberControl",
+    value => dotCount = value
 );
 
-shiftControl.addEventListener(
-    "input",
-    () => {
-        shift = Number(shiftControl.value);
-        shiftValue.value = shift;
-        shiftValue.textContent = shift;
-    }
+bindNumericControl(
+    "shiftControl",
+    "shiftNumberControl",
+    value => shift = value
 );
 
-omegaControl.addEventListener(
-    "input",
-    () => {
-        omega = Number(omegaControl.value);
-        omegaValue.value = omega;
-        omegaValue.textContent = omega;
-    }
+bindNumericControl(
+    "omegaControl",
+    "omegaNumberControl",
+    value => omega = value
 );
 
-brightnessOscillationAmplitudeControl.addEventListener(
-    "input",
-    () => {
-        brightnessOscillationAmplitude = Number(brightnessOscillationAmplitudeControl.value);
-        brightnessOscillationAmplitudeValue.value = brightnessOscillationAmplitude;
-        brightnessOscillationAmplitudeValue.textContent = brightnessOscillationAmplitude;
-    }
+bindNumericControl(
+    "brightnessOscillationAmplitudeControl",
+    "brightnessOscillationAmplitudeNumberControl",
+    value => brightnessOscillationAmplitude = value
 );
 
 function updateCanvas(
