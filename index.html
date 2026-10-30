@@ -317,8 +317,8 @@ const positionLocation =
         "position"
     );
 
-    // Describe each vertex as two tightly packed floating-point coordinates.
-    gl.enableVertexAttribArray(
+// Describe each vertex as two tightly packed floating-point coordinates.
+gl.enableVertexAttribArray(
     positionLocation
 );
 
@@ -625,8 +625,8 @@ const brightnessOscillationAmplitudeLocation =
 
 function render(timeMs)
 {
-        // requestAnimationFrame supplies milliseconds; omega is radians per second.
-        const timeS = timeMs * 0.001;
+    // requestAnimationFrame supplies milliseconds; omega is radians per second.
+    const timeS = timeMs * 0.001;
     let deltaTimeS = timeS - previousTimeS;
     previousTimeS = timeS;
     omegaT += omega * deltaTimeS;
